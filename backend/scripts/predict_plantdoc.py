@@ -19,8 +19,9 @@ MODEL_PATHS = [
     os.path.join(os.path.dirname(__file__), "..", "models", "best_plantdoc_model.keras")
 ]
 
-# Global model variable for lazy loading
+# Global variables for lazy loading
 _model = None
+_class_names = None
 
 def load_model():
     """Load the plant disease model lazily with fallback options"""
@@ -49,9 +50,7 @@ def load_model():
         else:
             raise FileNotFoundError("No plant disease models found")
     
-# Global variables for lazy loading
-_model = None
-_class_names = None
+    return _model
 
 def load_class_names():
     """Load class names from JSON file"""

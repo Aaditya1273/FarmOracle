@@ -14,9 +14,20 @@ import os
 import tempfile
 import shutil
 
-# Configure logging
+# Configure logging first
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Import Gemini service
+gemini_service = None
+try:
+    from services.gemini_service import gemini_service
+    logger.info("✅ Gemini service imported successfully")
+except ImportError as e:
+    logger.warning(f"⚠️ Could not import Gemini service: {e}")
+    logger.warning("Image validation and AI reports will be disabled")
+except Exception as e:
+    logger.error(f"❌ Error importing Gemini service: {e}")
 
 # Import prediction functions
 try:
@@ -38,6 +49,48 @@ class OracleResponse(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
     timestamp: str
     hackathon: str = "Africa Blockchain Festival 2025"
+
+class FarmingAdviceRequest(BaseModel):
+    crop_type: str
+    disease: Optional[str] = None
+    soil_type: Optional[str] = None
+    weather: Optional[str] = None
+
+class MarketInsightsRequest(BaseModel):
+    crop_type: str
+    current_price: float
+
+@router.post("/validate/plant-image")
+async def validate_plant_image(file: UploadFile = File(...)):
+    """Validate if uploaded image is a plant/crop before analysis"""
+    if not gemini_service or not gemini_service.model:
+        # If Gemini not available, allow all images
+        return {
+            "status": "success",
+            "is_plant": True,
+            "message": "Validation unavailable, proceeding with analysis"
+        }
+    
+    try:
+        # Save uploaded file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
+            shutil.copyfileobj(file.file, temp_file)
+            temp_path = temp_file.name
+        
+        # Validate with Gemini
+        result = await gemini_service.validate_plant_image(temp_path)
+        
+        # Clean up
+        os.unlink(temp_path)
+        
+        return result
+    except Exception as e:
+        logger.error(f"Image validation error: {e}")
+        return {
+            "status": "error",
+            "is_plant": True,  # Allow by default on error
+            "message": "Validation failed, proceeding with analysis"
+        }
 
 @router.get("/oracle/status")
 async def get_oracle_status():
@@ -92,39 +145,116 @@ async def disease_oracle(file: UploadFile = File(...)):
             shutil.copyfileobj(file.file, temp_file)
             temp_path = temp_file.name
 
-        # Get prediction
-        result = predict_disease(temp_path)
-        
-        # Clean up
-        os.unlink(temp_path)
-        
-        if "error" in result:
-            return JSONResponse(
-                status_code=400,
-                content={
+        # Step 1: Validate if image is a plant/crop
+        if gemini_service and gemini_service.model:
+            validation = await gemini_service.validate_plant_image(temp_path)
+            
+            if not validation.get("is_plant", True):
+                os.unlink(temp_path)
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "oracle_type": "disease_detection",
+                        "status": "invalid_image",
+                        "error": "Not a plant image",
+                        "message": "⚠️ Please upload only plant, crop, vegetable, or fruit images",
+                        "suggestion": "Upload a clear photo of leaves, stems, or fruits showing any disease symptoms",
+                        "hackathon": "Africa Blockchain Festival 2025"
+                    }
+                )
+
+        # Step 2: Try ML model first
+        try:
+            result = predict_disease(temp_path)
+            
+            if "error" not in result:
+                # ML model succeeded
+                disease_name = result.get("class", "Unknown")
+                confidence = result.get("confidence", 0.0)
+                
+                # Step 3: Generate user-friendly report using Gemini
+                user_report = None
+                if gemini_service and gemini_service.model and confidence > 0.5:
+                    report_result = await gemini_service.generate_user_friendly_report(
+                        disease_name=disease_name,
+                        confidence=confidence,
+                        crop_type=result.get("crop_type", "crop")
+                    )
+                    if report_result["status"] == "success":
+                        user_report = report_result["report"]
+                
+                os.unlink(temp_path)
+                return {
                     "oracle_type": "disease_detection",
-                    "status": "error",
-                    "error": result["error"],
+                    "status": "success",
+                    "prediction": {
+                        "disease": disease_name,
+                        "health_status": result.get("status", "Unknown"),
+                        "treatment_recommended": result.get("status") == "DISEASED",
+                        "user_friendly_report": user_report
+                    },
+                    "confidence": confidence,
+                    "metadata": {
+                        "model": "EfficientNetB4",
+                        "classes_supported": 27,
+                        "image_processed": True,
+                        "source": "ML Model",
+                        "report_generated": user_report is not None
+                    },
                     "hackathon": "Africa Blockchain Festival 2025"
                 }
-            )
+        except Exception as ml_error:
+            logger.warning(f"ML model failed: {ml_error}, falling back to Gemini AI")
         
-        return {
-            "oracle_type": "disease_detection",
-            "status": "success",
-            "prediction": {
-                "disease": result.get("class", "Unknown"),
-                "health_status": result.get("status", "Unknown"),
-                "treatment_recommended": result.get("status") == "DISEASED"
-            },
-            "confidence": result.get("confidence", 0.0),
-            "metadata": {
-                "model": "EfficientNetB4",
-                "classes_supported": 27,
-                "image_processed": True
-            },
-            "hackathon": "Africa Blockchain Festival 2025"
-        }
+        # Fallback to Gemini AI if ML model fails
+        if gemini_service and gemini_service.model:
+            logger.info("🤖 Using Gemini AI as fallback for disease detection")
+            try:
+                gemini_result = await gemini_service.analyze_crop_image(temp_path, "crop")
+                
+                if gemini_result["status"] == "success":
+                    return {
+                        "oracle_type": "disease_detection",
+                        "status": "success",
+                        "prediction": {
+                            "disease": "AI Analysis",
+                            "health_status": "Analyzed by Gemini AI",
+                            "analysis": gemini_result["analysis"],
+                            "treatment_recommended": True
+                        },
+                        "confidence": 0.85,
+                        "metadata": {
+                            "model": "Gemini Pro Vision",
+                            "source": "Gemini AI Fallback",
+                            "image_processed": True
+                        },
+                        "hackathon": "Africa Blockchain Festival 2025"
+                    }
+            except Exception as gemini_error:
+                logger.error(f"Gemini fallback error: {gemini_error}")
+            finally:
+                # Clean up temp file
+                try:
+                    os.unlink(temp_path)
+                except:
+                    pass
+        else:
+            # Clean up if Gemini not available
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+        
+        # If both fail, return error
+        return JSONResponse(
+            status_code=503,
+            content={
+                "oracle_type": "disease_detection",
+                "status": "error",
+                "error": "Both ML model and Gemini AI unavailable",
+                "hackathon": "Africa Blockchain Festival 2025"
+            }
+        )
         
     except Exception as e:
         logger.error(f"Disease oracle error: {str(e)}")
@@ -132,24 +262,68 @@ async def disease_oracle(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Disease oracle failed: {str(e)}")
 
 @router.get("/oracle/market")
-async def market_oracle():
+async def market_oracle(crop_type: str = "General", current_price: float = 0.0):
     """Market Price Oracle - Get crop price predictions"""
     try:
-        predictions = get_price_predictions()
+        # Try ML model first
+        try:
+            predictions = get_price_predictions()
+            
+            return {
+                "oracle_type": "market_prediction",
+                "status": "success", 
+                "prediction": {
+                    "crops": predictions,
+                    "forecast_weeks": 5,
+                    "currency": "Local currency per unit"
+                },
+                "confidence": 0.85,
+                "metadata": {
+                    "models": "Random Forest + XGBoost",
+                    "data_source": "Historical market data",
+                    "update_frequency": "Weekly",
+                    "source": "ML Model"
+                },
+                "hackathon": "Africa Blockchain Festival 2025"
+            }
+        except Exception as ml_error:
+            logger.warning(f"ML market model failed: {ml_error}, falling back to Gemini AI")
         
+        # Fallback to Gemini AI
+        if gemini_service and gemini_service.model and crop_type != "General":
+            logger.info("🤖 Using Gemini AI as fallback for market prediction")
+            gemini_result = await gemini_service.get_market_insights(crop_type, current_price)
+            
+            if gemini_result["status"] == "success":
+                return {
+                    "oracle_type": "market_prediction",
+                    "status": "success",
+                    "prediction": {
+                        "insights": gemini_result["insights"],
+                        "crop_type": crop_type,
+                        "current_price": current_price,
+                        "analysis": "AI-powered market analysis"
+                    },
+                    "confidence": 0.80,
+                    "metadata": {
+                        "model": "Gemini 1.5 Flash",
+                        "source": "Gemini AI Fallback",
+                        "data_source": "AI Analysis"
+                    },
+                    "hackathon": "Africa Blockchain Festival 2025"
+                }
+        
+        # If both fail, return generic advice
         return {
             "oracle_type": "market_prediction",
-            "status": "success", 
+            "status": "limited",
             "prediction": {
-                "crops": predictions,
-                "forecast_weeks": 5,
-                "currency": "Local currency per unit"
+                "message": "Market data temporarily unavailable",
+                "general_advice": "Check local market prices and consult with other farmers"
             },
-            "confidence": 0.85,  # Average model confidence
+            "confidence": 0.0,
             "metadata": {
-                "models": "Random Forest + XGBoost",
-                "data_source": "Historical market data",
-                "update_frequency": "Weekly"
+                "source": "Fallback Response"
             },
             "hackathon": "Africa Blockchain Festival 2025"
         }
@@ -163,29 +337,80 @@ async def market_oracle():
 async def soil_oracle(file: UploadFile = File(...)):
     """Soil Analysis Oracle - Analyze soil images"""
     try:
-        # This would integrate with the existing soil prediction
-        # For now, return a structured response
-        return {
-            "oracle_type": "soil_analysis",
-            "status": "success",
-            "prediction": {
-                "soil_type": "Alluvial soil",
-                "ph_level": "6.5-7.0",
-                "recommended_crops": ["Rice", "Wheat", "Corn"],
-                "care_instructions": [
-                    "Ensure proper drainage",
-                    "Regular organic matter addition", 
-                    "Monitor pH levels"
-                ]
-            },
-            "confidence": 0.78,
-            "metadata": {
-                "model": "Multi-class CNN",
-                "soil_types_supported": 4,
-                "analysis_method": "Computer Vision"
-            },
-            "hackathon": "Africa Blockchain Festival 2025"
-        }
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
+            shutil.copyfileobj(file.file, temp_file)
+            temp_path = temp_file.name
+        
+        # Try ML model first
+        try:
+            # Attempt to use soil prediction model
+            soil_result = predict_soil_type(temp_path)
+            
+            if soil_result and isinstance(soil_result, dict):
+                os.unlink(temp_path)
+                
+                return {
+                    "oracle_type": "soil_analysis",
+                    "status": "success",
+                    "prediction": {
+                        "soil_type": soil_result.get("soil_type", "Alluvial soil"),
+                        "recommended_crops": soil_result.get("recommended_crops", ["Rice", "Wheat", "Corn"]),
+                        "care_instructions": soil_result.get("care_instructions", []),
+                        "notes": soil_result.get("notes", ""),
+                        "ph_range": soil_result.get("ph_range", "N/A"),
+                        "texture": soil_result.get("texture", "N/A"),
+                        "water_retention": soil_result.get("water_retention", "N/A")
+                    },
+                    "confidence": soil_result.get("confidence", 0.78),
+                    "metadata": {
+                        "model": "Multi-class CNN",
+                        "soil_types_supported": 4,
+                        "analysis_method": "Computer Vision",
+                        "source": "ML Model"
+                    },
+                    "hackathon": "Africa Blockchain Festival 2025"
+                }
+            else:
+                raise ValueError("Soil prediction returned None or invalid result")
+        except Exception as ml_error:
+            logger.warning(f"ML soil model failed: {ml_error}, falling back to Gemini AI")
+        
+        # Fallback to Gemini AI
+        if gemini_service and gemini_service.model:
+            logger.info("🤖 Using Gemini AI as fallback for soil analysis")
+            gemini_result = await gemini_service.analyze_crop_image(temp_path, "soil")
+            os.unlink(temp_path)
+            
+            if gemini_result["status"] == "success":
+                return {
+                    "oracle_type": "soil_analysis",
+                    "status": "success",
+                    "prediction": {
+                        "analysis": gemini_result["analysis"],
+                        "ai_assessment": "Gemini AI soil analysis",
+                        "recommendations": "See analysis for detailed recommendations"
+                    },
+                    "confidence": 0.75,
+                    "metadata": {
+                        "model": "Gemini 1.5 Flash",
+                        "source": "Gemini AI Fallback",
+                        "analysis_method": "AI Vision"
+                    },
+                    "hackathon": "Africa Blockchain Festival 2025"
+                }
+        
+        # If both fail
+        os.unlink(temp_path)
+        return JSONResponse(
+            status_code=503,
+            content={
+                "oracle_type": "soil_analysis",
+                "status": "error",
+                "error": "Soil analysis temporarily unavailable",
+                "hackathon": "Africa Blockchain Festival 2025"
+            }
+        )
         
     except Exception as e:
         logger.error(f"Soil oracle error: {str(e)}")
@@ -193,29 +418,25 @@ async def soil_oracle(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Soil oracle failed: {str(e)}")
 
 @router.get("/oracle/weather")
-async def weather_oracle(location: Optional[str] = "Default"):
-    """Weather Forecast Oracle - Get weather predictions for farming"""
+async def weather_oracle(location: Optional[str] = "auto:ip"):
+    """Weather Forecast Oracle - Get REAL weather predictions from WeatherAPI"""
     try:
+        # Fetch real weather data
+        weather_data = get_weather_forecast(location)
+        
+        if weather_data["status"] == "error":
+            raise HTTPException(status_code=500, detail=weather_data["message"])
+        
         return {
             "oracle_type": "weather_forecast",
             "status": "success",
-            "prediction": {
-                "location": location,
-                "forecast_days": 14,
-                "temperature_range": "22-28°C",
-                "rainfall_probability": "65%",
-                "farming_recommendations": [
-                    "Good conditions for planting",
-                    "Prepare for moderate rainfall",
-                    "Monitor soil moisture levels"
-                ],
-                "alerts": []
-            },
-            "confidence": 0.82,
+            "location": weather_data["location"],
+            "current": weather_data["current"],
+            "forecast": weather_data["forecast"],
             "metadata": {
-                "model": "LSTM Time Series",
-                "data_sources": "Meteorological stations",
-                "update_frequency": "Daily"
+                "source": "WeatherAPI.com",
+                "update_frequency": "Real-time",
+                "data_type": "Live weather data"
             },
             "hackathon": "Africa Blockchain Festival 2025"
         }

@@ -29,12 +29,14 @@ contract FarmOracleComplete {
         uint256 quantity;
         uint256 pricePerUnit;
         bool sold;
+        address buyer;
         uint256 timestamp;
     }
     
     uint256 public nextCropId;
     mapping(uint256 => Crop) public crops;
     mapping(address => uint256[]) public farmerCrops;
+    mapping(address => uint256[]) public buyerPurchases;  // Track buyer's purchases
     
     event CropListed(
         uint256 indexed id, 
@@ -69,6 +71,7 @@ contract FarmOracleComplete {
             quantity: quantity,
             pricePerUnit: pricePerUnit,
             sold: false,
+            buyer: address(0),
             timestamp: block.timestamp
         });
         
@@ -86,9 +89,12 @@ contract FarmOracleComplete {
         Crop storage crop = crops[cropId];
         require(!crop.sold, "Crop already sold");
         require(msg.value >= crop.pricePerUnit * crop.quantity, "Insufficient payment");
+        require(msg.sender != crop.farmer, "Cannot buy your own crop");
         
         crop.farmer.transfer(msg.value);
         crop.sold = true;
+        crop.buyer = msg.sender;
+        buyerPurchases[msg.sender].push(cropId);
         
         emit CropSold(cropId, msg.sender, crop.farmer, msg.value);
     }
@@ -102,7 +108,9 @@ contract FarmOracleComplete {
         string memory name,
         uint256 quantity,
         uint256 price,
-        bool sold
+        bool sold,
+        address buyer,
+        uint256 timestamp
     ) {
         Crop memory crop = crops[cropId];
         return (
@@ -111,7 +119,9 @@ contract FarmOracleComplete {
             crop.name,
             crop.quantity,
             crop.pricePerUnit,
-            crop.sold
+            crop.sold,
+            crop.buyer,
+            crop.timestamp
         );
     }
     
@@ -120,6 +130,35 @@ contract FarmOracleComplete {
      */
     function getFarmerCrops(address farmer) public view returns (uint256[] memory) {
         return farmerCrops[farmer];
+    }
+    
+    /**
+     * @dev Get all purchases by a buyer
+     */
+    function getBuyerPurchases(address buyer) public view returns (uint256[] memory) {
+        return buyerPurchases[buyer];
+    }
+    
+    /**
+     * @dev Get all available (unsold) crops
+     */
+    function getAllAvailableCrops() public view returns (uint256[] memory) {
+        uint256 availableCount = 0;
+        for (uint256 i = 0; i < nextCropId; i++) {
+            if (!crops[i].sold) {
+                availableCount++;
+            }
+        }
+        
+        uint256[] memory availableCrops = new uint256[](availableCount);
+        uint256 index = 0;
+        for (uint256 i = 0; i < nextCropId; i++) {
+            if (!crops[i].sold) {
+                availableCrops[index] = i;
+                index++;
+            }
+        }
+        return availableCrops;
     }
     
     // ============================================
