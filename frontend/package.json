@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "description": "FarmOracle - Africa's Autonomous AI Farming Oracle on the Blockchain",
   "private": true,
+  "engines": {
+    "node": "18.x",
+    "npm": "9.x"
+  },
   "dependencies": {
     "@rainbow-me/rainbowkit": "^2.1.6",
     "@semaphore-protocol/identity": "^3.15.2",
