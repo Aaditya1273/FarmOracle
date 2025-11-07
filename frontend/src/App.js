@@ -69,11 +69,11 @@ function App() {
           
           <Routes>
             <Route path="/disease-detection" element={<PlantDiseaseDetection />} />
-            <Route path="/market-predection" element={<MarketPrediction />} />
-            <Route path="/weather-predection" element={<WeatherForecast />} />
-            <Route path="/StorageForm" element={<StorageForm />} />
-            <Route path="/Marketplace" element={<Marketplace />} />
-            <Route path="/SoilPredictor" element={<SoilPredictor />} />
+            <Route path="/market-prediction" element={<MarketPrediction />} />
+            <Route path="/weather-prediction" element={<WeatherForecast />} />
+            <Route path="/storage-form" element={<StorageForm />} />
+            <Route path="/marketplace" element={<Marketplace />} />
+            <Route path="/soil-predictor" element={<SoilPredictor />} />
             <Route path="/api-test" element={<ApiTestPage />} />
             <Route path="/" element={
               <div className="content-container">

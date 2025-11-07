@@ -60,22 +60,22 @@ const AgriDashboard = () => {
     // Allow navigation without wallet check - wallet only needed for Marketplace
     switch(cardId) {
         case 1: 
-        navigate('/market-predection');
+        navigate('/market-prediction');
         break;
       case 2: 
         navigate('/disease-detection');
         break;
       case 3: 
-        navigate('/weather-predection');
+        navigate('/weather-prediction');
         break;
       case 4: 
-        navigate('/SoilPredictor');
+        navigate('/soil-predictor');
         break;
       case 5: 
-        navigate('/StorageForm');
+        navigate('/storage-form');
         break;
       case 6: 
-        navigate('/Marketplace');
+        navigate('/marketplace');
         break;
         default:
         setActiveCard(cardId);
