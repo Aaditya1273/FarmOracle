@@ -291,8 +291,19 @@ const PlantDiseaseDetection = () => {
         setShowReportModal(true);
       } catch (geminiError) {
         console.error("Gemini fallback failed:", geminiError);
+        
+        // Show the actual error message to help debug
+        let errorMessage = "Analysis failed. ";
+        if (geminiError.message.includes('API key not configured')) {
+          errorMessage = "Gemini API key is not configured. Please contact the administrator.";
+        } else if (geminiError.message.includes('invalid')) {
+          errorMessage = "Gemini API key is invalid. Please contact the administrator.";
+        } else {
+          errorMessage = `Analysis failed: ${geminiError.message}`;
+        }
+        
         setDetectionResult({ 
-          error: "Analysis failed. Please check your internet connection and try again." 
+          error: errorMessage
         });
       }
     } finally {
