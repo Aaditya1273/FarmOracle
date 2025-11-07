@@ -6,6 +6,14 @@ const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/
 
 export const analyzeSoilImage = async (imageFile) => {
   try {
+    // Check if API key exists
+    if (!GEMINI_API_KEY) {
+      console.error('❌ REACT_APP_GEMINI_API_KEY is not set!');
+      throw new Error('Gemini API key not configured. Please add REACT_APP_GEMINI_API_KEY to your environment variables.');
+    }
+
+    console.log('🔍 Starting Gemini soil analysis...');
+    
     // Convert image to base64
     const base64Image = await fileToBase64(imageFile);
     

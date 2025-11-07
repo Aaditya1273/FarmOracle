@@ -6,6 +6,14 @@ const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/
 
 export const analyzePlantDisease = async (imageFile) => {
   try {
+    // Check if API key exists
+    if (!GEMINI_API_KEY) {
+      console.error('❌ REACT_APP_GEMINI_API_KEY is not set!');
+      throw new Error('Gemini API key not configured. Please add REACT_APP_GEMINI_API_KEY to your environment variables.');
+    }
+
+    console.log('🔍 Starting Gemini analysis...');
+    
     // Convert image to base64
     const base64Image = await fileToBase64(imageFile);
     
@@ -36,6 +44,8 @@ Format your response as JSON with these exact fields: disease_name, confidence, 
       }]
     };
 
+    console.log('📤 Sending request to Gemini API...');
+    
     const response = await axios.post(
       `${GEMINI_API_URL}?key=${GEMINI_API_KEY}`,
       requestBody,
@@ -45,6 +55,8 @@ Format your response as JSON with these exact fields: disease_name, confidence, 
         }
       }
     );
+
+    console.log('✅ Gemini API response received:', response.data);
 
     // Parse Gemini response
     const text = response.data.candidates[0].content.parts[0].text;
@@ -75,8 +87,18 @@ Format your response as JSON with these exact fields: disease_name, confidence, 
     };
 
   } catch (error) {
-    console.error('Gemini API Error:', error);
-    throw new Error('Failed to analyze image. Please try again.');
+    console.error('❌ Gemini API Error:', error);
+    console.error('Error details:', error.response?.data || error.message);
+    
+    if (error.response?.status === 400) {
+      throw new Error('Invalid API request. Please check your Gemini API key.');
+    } else if (error.response?.status === 403) {
+      throw new Error('Gemini API key is invalid or expired. Please update your API key.');
+    } else if (error.message.includes('API key not configured')) {
+      throw error;
+    } else {
+      throw new Error(`Failed to analyze image: ${error.response?.data?.error?.message || error.message}`);
+    }
   }
 };
 
