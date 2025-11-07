@@ -1,12 +1,10 @@
-'use client';
-
 import React, { useState, useEffect } from 'react';
 
 const AgriNewsSection = () => {
   const articles = [
     {
       id: 1,
-      image: "news1.jpg", 
+      image: "/news1.jpg", 
       date: "7 Nov 2025",
       author: "Nebula Sydnee",
       comments: 2,
@@ -15,7 +13,7 @@ const AgriNewsSection = () => {
     },
     {
       id: 2,
-      image: "news2.webp", 
+      image: "/news2.webp", 
       date: "8 Nov 2025",
       author: "Kevin Yarks",
       comments: 3,
@@ -24,7 +22,7 @@ const AgriNewsSection = () => {
     },
     {
       id: 3,
-      image: "news3.jpg", 
+      image: "/news3.jpg", 
       date: "11 Nov 2025",
       author: "Peter Stark",
       comments: 1,
