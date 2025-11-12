@@ -1,4 +1,4 @@
-# 🌍 FarmOracle: Africa's Autonomous AI Farming Oracle on the Blockchain:
+# 🌍 FarmOracle: Africa's Autonomous AI Farming Oracle on the Blockchain
 
 **"Empowering African farmers with AI-driven insights and blockchain-backed transparency"**
 
